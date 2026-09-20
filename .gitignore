@@ -1,0 +1,51 @@
+#IDE
+.vscode/
+.idea
+Pods
+*.iml
+.gradle
+/local.properties
+/.idea/workspace.xml
+/.idea/libraries
+.DS_Store
+*.xcworkspacedata
+*.user
+
+/build
+/build-mingw/
+/captures
+.externalNativeBuild
+
+## auto docs generated
+docs/document/
+docs/doxygen/debug.txt
+
+## auto compile
+cache/
+release/
+cmake-build-debug/
+
+## 预编译二进制库（用户需自行下载，见 docs/1.环境配置.md）
+3rdparty/FFmpeg/Windows/
+3rdparty/FFmpeg/Android/lib/
+3rdparty/InspireFace-arm64/lib/
+3rdparty/InspireFace-x86_64/lib/
+*.exe
+*.7z
+*.zip
+*.dll
+*.so
+*.dylib
+*.a
+
+## 大型资源文件（用户需自行下载）
+resource/pack/
+resource/video/*.mp4
+android/AVPlayerDemo/app/src/main/assets/*.mp4
+
+## 临时文件
+*.bak
+sitecustomize.py
+qtcreator_install.qs
+__pycache__/
+*.pyc

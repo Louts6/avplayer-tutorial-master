@@ -1,0 +1,35 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "mingw-release",
+      "displayName": "MinGW Release",
+      "description": "使用 MinGW 13.1.0 + Qt 6.7.2 Release 构建（Qt 仅提供 Release 库）",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build-mingw",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "",
+        "CMAKE_C_COMPILER": "D:/Qt/Tools/mingw1310_64/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER": "D:/Qt/Tools/mingw1310_64/bin/g++.exe",
+        "CMAKE_PREFIX_PATH": "D:/Qt/6.7.2/mingw_64",
+        "CMAKE_MAKE_PROGRAM": "D:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe"
+      },
+      "environment": {
+        "PATH": "D:/Qt/Tools/mingw1310_64/bin;D:/Qt/6.7.2/mingw_64/bin;C:/Program Files/CMake/bin;$penv{PATH}"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "mingw-release-build",
+      "configurePreset": "mingw-release",
+      "targets": ["QtDemo"],
+      "jobs": 16
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+BasedOnStyle: Google
+IndentWidth: 4
+ColumnLimit: 120
+SortIncludes: true
+# 访问说明符(public、private等)的偏移
+AccessModifierOffset: -4
+
+# 对齐连续宏定义
+AlignConsecutiveMacros: AcrossEmptyLinesAndComments
+
+---
+Language: Cpp
+# Cpp特定规则
+AllowShortEnumsOnASingleLine: false
+
+---
+Language: ObjC
+# ObjC特定规则
+# 在圆括号的(后和)前添加空格
+SpacesInParentheses: false
+
+# 在ObjC的@property后添加一个空格
+ObjCSpaceAfterProperty: true
+SpaceBeforeParens: Custom
+SpaceBeforeParensOptions:
+  AfterControlStatements: true
+  AfterFunctionDefinitionName: true
+---
+Language: Java
+# Java特定规则
+
