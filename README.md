@@ -1,0 +1,12 @@
+1. 安装Clion
+2. 安装QT: [Mac 上 CLion 搭建 QT6.6 开发环境QtCreator 的开发体验自然是不如 CLion 的，刚好最近有开 - 掘金 (juejin.cn)](https://juejin.cn/post/7313043317722071059)
+3. 安装conan2
+4. [clion配置conan2](https://blog.csdn.net/weixin_44959261/article/details/131868322)
+
+```shell
+主要步骤：在Clion配置中添加
+-DCMAKE_TOOLCHAIN_FILE=/绝对路径/learnav/cmake-build-debug/build/Debug/generators/conan_toolchain.cmake
+```
+
+1. 执行 conan install . --output-folder=cmake-build-debug --build=missing -s build\_type=Debug
+2. 通过Clion 运行程序
