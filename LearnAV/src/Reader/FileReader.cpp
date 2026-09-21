@@ -72,6 +72,10 @@ int FileReader::GetVideoWidth() { return m_videoDecoder ? m_videoDecoder->GetVid
 
 int FileReader::GetVideoHeight() { return m_videoDecoder ? m_videoDecoder->GetVideoHeight() : 0; }
 
+void FileReader::SetUseGpu(bool useGpu) {
+    if (m_videoDecoder) m_videoDecoder->SetUseGpu(useGpu);
+}
+
 // 继承自IDeMuxer::Listener
 void FileReader::OnDeMuxStart() { LOGI(kFileReaderTag, "OnDeMuxStart"); }
 

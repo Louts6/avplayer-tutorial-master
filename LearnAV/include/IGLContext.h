@@ -81,8 +81,11 @@ private:
     void CreateOnGUIThread(bool* created);
 
     QOpenGLContext* m_sharedGLContext{nullptr};
-    QOpenGLContext* m_context{nullptr};
-    QOffscreenSurface* m_surface{nullptr};
+    // 每个线程需要独立的 QOpenGLContext/QOffscreenSurface，否则 Qt 拒绝
+    // 跨线程 makeCurrent ("Cannot make QOpenGLContext current in a different thread")。
+    // 用 thread_local 保证各线程拿到自己的 context。
+    QOpenGLContext*& tlsContext();
+    QOffscreenSurface*& tlsSurface();
 };
 
 }  // namespace av

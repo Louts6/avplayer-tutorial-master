@@ -7,6 +7,7 @@
 
 #include <QCoreApplication>
 #include <QMetaObject>
+#include <QThread>
 
 namespace av {
 
@@ -17,70 +18,81 @@ GLContext::~GLContext() {
     Destroy();
 }
 
+// thread_local：每个线程独立持有自己的 QOpenGLContext/QOffscreenSurface，
+// 避免一个 context 被多个线程共享导致 "Cannot make QOpenGLContext current
+// in a different thread" 致命错误。所有线程的 context 都与 m_sharedGLContext
+// （来自 UI 线程的 QOpenGLWidget）共享，因此可以共享 OpenGL 资源（纹理/FBO 等）。
+QOpenGLContext*& GLContext::tlsContext() {
+    thread_local QOpenGLContext* ctx = nullptr;
+    return ctx;
+}
+
+QOffscreenSurface*& GLContext::tlsSurface() {
+    thread_local QOffscreenSurface* surf = nullptr;
+    return surf;
+}
+
 bool GLContext::Initialize() {
     if (!m_sharedGLContext) {
         LOGE("GLContext", "Shared GL context is null!");
         return false;
     }
 
-    // Qt 6 中 QOffscreenSurface 是 QWindow 派生类，必须在 GUI 线程创建，
-    // 否则会出现 "Attempting to create QWindow-based QOffscreenSurface
-    // outside the gui thread" 警告并失败。
-    // 但 QOpenGLContext 必须在使用它的线程中 create()，否则
-    // Qt 会拒绝在另一线程 makeCurrent ("Cannot make QOpenGLContext current
-    // in a different thread")，触发 fatal error。
+    // 如果当前线程已经初始化过，直接返回
+    if (tlsContext() && tlsSurface()) return true;
+
+    // Qt 6 中 QOffscreenSurface 是 QWindow 派生类，必须在 GUI 线程创建。
+    // QOpenGLContext 必须在使用它的线程中 create()，否则 Qt 会拒绝跨线程 makeCurrent。
     if (QThread::currentThread() == qApp->thread()) {
-        m_surface = new QOffscreenSurface();
-        m_surface->create();
+        tlsSurface() = new QOffscreenSurface();
+        tlsSurface()->create();
     } else {
         QMetaObject::invokeMethod(qApp, [this]() {
-            m_surface = new QOffscreenSurface();
-            m_surface->create();
+            tlsSurface() = new QOffscreenSurface();
+            tlsSurface()->create();
         }, Qt::BlockingQueuedConnection);
     }
 
-    m_context = new QOpenGLContext();
-    m_context->setShareContext(m_sharedGLContext);
-    if (!m_context->create()) {
+    tlsContext() = new QOpenGLContext();
+    tlsContext()->setShareContext(m_sharedGLContext);
+    if (!tlsContext()->create()) {
         LOGE("GLContext", "Failed to create GL context!");
         return false;
     }
 
-    m_context->makeCurrent(m_surface);
+    tlsContext()->makeCurrent(tlsSurface());
     return true;
 }
 
 void GLContext::CreateOnGUIThread(bool *created) {
-    // 保留以兼容头文件声明，已不再使用。
     (void)created;
 }
 
 void GLContext::Destroy() {
     // QOffscreenSurface 必须在创建它的线程（GUI 线程）中销毁；
-    // QOpenGLContext 也必须在创建它的线程中销毁（即调用 Destroy 的线程，
-    // 通常是与 Initialize 同一线程）。
-    if (QThread::currentThread() != qApp->thread() && m_surface) {
-        auto surface = m_surface;
-        m_surface = nullptr;
+    // QOpenGLContext 也必须在创建它的线程中销毁。
+    if (QThread::currentThread() != qApp->thread() && tlsSurface()) {
+        auto surface = tlsSurface();
+        tlsSurface() = nullptr;
         QMetaObject::invokeMethod(qApp, [surface]() { delete surface; },
                                   Qt::BlockingQueuedConnection);
-    } else if (m_surface) {
-        delete m_surface;
-        m_surface = nullptr;
+    } else if (tlsSurface()) {
+        delete tlsSurface();
+        tlsSurface() = nullptr;
     }
 
-    if (m_context) {
-        delete m_context;
-        m_context = nullptr;
+    if (tlsContext()) {
+        delete tlsContext();
+        tlsContext() = nullptr;
     }
 }
 
 void GLContext::MakeCurrent() {
-    if (m_context && m_surface) m_context->makeCurrent(m_surface);
+    if (tlsContext() && tlsSurface()) tlsContext()->makeCurrent(tlsSurface());
 }
 
 void GLContext::DoneCurrent() {
-    if (m_context) m_context->doneCurrent();
+    if (tlsContext()) tlsContext()->doneCurrent();
 }
 
 }  // namespace av

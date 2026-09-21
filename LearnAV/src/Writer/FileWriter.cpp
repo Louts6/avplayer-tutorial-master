@@ -61,6 +61,10 @@ void FileWriter::NotifyVideoFinished() {
     NotifyVideoFrame(videoFrame);
 }
 
+void FileWriter::SetUseGpu(bool useGpu) {
+    if (m_videoEncoder) m_videoEncoder->SetUseGpu(useGpu);
+}
+
 // 继承自 AudioEncoder::Listener
 void FileWriter::OnAudioEncoderNotifyPacket(std::shared_ptr<IAVPacket> packet) {
     if (m_muxer) m_muxer->NotifyAudioPacket(packet);

@@ -8,6 +8,7 @@
 
 extern "C" {
 #include <libavutil/imgutils.h>  // Include this header for av_image_get_buffer_size and av_image_fill_arrays
+#include <libavutil/hwcontext.h> // for av_hwframe_transfer_data
 }
 
 static const char* kVideoDecoderTag = "VideoDecoder";
@@ -44,8 +45,22 @@ void VideoDecoder::SetStream(struct AVStream* stream) {
     std::lock_guard<std::mutex> lock(m_codecContextMutex);
     CleanupContext();
 
-    // Find the decoder for the codec
-    const AVCodec* codec = avcodec_find_decoder(stream->codecpar->codec_id);
+    // 根据开关选择解码器：GPU（NVIDIA CUVID）或 CPU 软件解码
+    const AVCodec* codec = nullptr;
+    m_isGpuDecoder = false;
+    if (m_useGpu && stream->codecpar->codec_id == AV_CODEC_ID_H264) {
+        codec = avcodec_find_decoder_by_name("h264_cuvid");
+        if (codec) {
+            m_isGpuDecoder = true;
+            LOGI(kVideoDecoderTag, "Using GPU decoder: h264_cuvid");
+        } else {
+            LOGW(kVideoDecoderTag, "GPU decoder (h264_cuvid) not found, fallback to CPU");
+        }
+    }
+    if (!codec) {
+        codec = avcodec_find_decoder(stream->codecpar->codec_id);
+        if (codec) LOGI(kVideoDecoderTag, "Using CPU decoder: %s", codec->name);
+    }
     if (!codec) return;
 
     // Allocate a new codec context
@@ -164,10 +179,31 @@ void VideoDecoder::DecodeAVPacket() {
             return;
         }
 
+        // 如果是 GPU 解码帧（AV_PIX_FMT_CUDA），需要从显存拷贝到内存
+        AVFrame* cpuFrame = frame;
+        AVFrame* transferredFrame = nullptr;
+        if (frame->format == AV_PIX_FMT_CUDA) {
+            transferredFrame = av_frame_alloc();
+            if (!transferredFrame) {
+                av_frame_free(&frame);
+                return;
+            }
+            if (av_hwframe_transfer_data(transferredFrame, frame, 0) < 0) {
+                LOGE(kVideoDecoderTag, "Failed to transfer CUDA frame to CPU.");
+                av_frame_free(&transferredFrame);
+                av_frame_free(&frame);
+                return;
+            }
+            av_frame_copy_props(transferredFrame, frame);
+            cpuFrame = transferredFrame;
+        }
+
         if (!m_swsContext) {
-            m_swsContext = sws_getContext(frame->width, frame->height, (AVPixelFormat)frame->format, frame->width,
-                                          frame->height, AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr, nullptr, nullptr);
+            m_swsContext = sws_getContext(cpuFrame->width, cpuFrame->height, (AVPixelFormat)cpuFrame->format,
+                                          cpuFrame->width, cpuFrame->height, AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr,
+                                          nullptr, nullptr);
             if (!m_swsContext) {
+                if (transferredFrame) av_frame_free(&transferredFrame);
                 av_frame_free(&frame);
                 return;
             }
@@ -175,31 +211,36 @@ void VideoDecoder::DecodeAVPacket() {
 
         AVFrame* rgbFrame = av_frame_alloc();
         if (!rgbFrame) {
+            if (transferredFrame) av_frame_free(&transferredFrame);
             av_frame_free(&frame);
             return;
         }
 
-        int numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGBA, frame->width, frame->height, 1);
+        int numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGBA, cpuFrame->width, cpuFrame->height, 1);
         std::shared_ptr<uint8_t> buffer(new uint8_t[numBytes], std::default_delete<uint8_t[]>());
-        if (av_image_fill_arrays(rgbFrame->data, rgbFrame->linesize, buffer.get(), AV_PIX_FMT_RGBA, frame->width,
-                                 frame->height, 1) < 0) {
-            av_frame_free(&frame);
+        if (av_image_fill_arrays(rgbFrame->data, rgbFrame->linesize, buffer.get(), AV_PIX_FMT_RGBA, cpuFrame->width,
+                                 cpuFrame->height, 1) < 0) {
             av_frame_free(&rgbFrame);
+            if (transferredFrame) av_frame_free(&transferredFrame);
+            av_frame_free(&frame);
             return;
         }
 
-        sws_scale(m_swsContext, frame->data, frame->linesize, 0, frame->height, rgbFrame->data, rgbFrame->linesize);
+        sws_scale(m_swsContext, cpuFrame->data, cpuFrame->linesize, 0, cpuFrame->height, rgbFrame->data,
+                  rgbFrame->linesize);
 
         auto videoFrame = std::make_shared<IVideoFrame>();
-        videoFrame->width = frame->width;
-        videoFrame->height = frame->height;
+        videoFrame->width = cpuFrame->width;
+        videoFrame->height = cpuFrame->height;
         videoFrame->data = std::move(buffer);
-        videoFrame->pts = frame->pts;
-        videoFrame->duration = frame->duration;
+        videoFrame->pts = cpuFrame->pts;
+        videoFrame->duration = cpuFrame->duration;
         videoFrame->timebaseNum = m_timeBase.num;
         videoFrame->timebaseDen = m_timeBase.den;
         videoFrame->releaseCallback = m_pipelineReleaseCallback;
         av_frame_free(&rgbFrame);
+
+        if (transferredFrame) av_frame_free(&transferredFrame);
 
         --m_pipelineResourceCount;
 
@@ -221,5 +262,9 @@ void VideoDecoder::CleanupContext() {
     if (m_codecContext) avcodec_free_context(&m_codecContext);
     if (m_swsContext) sws_freeContext(m_swsContext);
 }
+
+void VideoDecoder::SetUseGpu(bool useGpu) { m_useGpu = useGpu; }
+
+bool VideoDecoder::IsUsingGpu() { return m_isGpuDecoder; }
 
 }  // namespace av

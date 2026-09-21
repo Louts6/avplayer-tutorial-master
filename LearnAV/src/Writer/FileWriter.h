@@ -26,6 +26,8 @@ public:
     void NotifyAudioFinished() override;
     void NotifyVideoFinished() override;
 
+    void SetUseGpu(bool useGpu) override;
+
 private:
     // 继承自 AudioEncoder::Listener
     void OnAudioEncoderNotifyPacket(std::shared_ptr<IAVPacket>) override;

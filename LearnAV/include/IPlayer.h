@@ -34,6 +34,11 @@ struct IPlayer {
     virtual void StopRecording() = 0;
     virtual bool IsRecording() = 0;
 
+    // 设置是否使用 GPU 编解码（默认 false，即 CPU 编解码）
+    // 注意：切换后需重新 Open 视频 / 重新开始录制才会生效
+    virtual void SetUseGpu(bool useGpu) = 0;
+    virtual bool IsUsingGpu() = 0;
+
     virtual ~IPlayer() = default;
 
     static IPlayer *Create(std::shared_ptr<GLContext> glContext);

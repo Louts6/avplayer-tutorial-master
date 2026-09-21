@@ -48,6 +48,12 @@ ControllerWidget::ControllerWidget(QWidget* parent, std::shared_ptr<av::IPlayer>
     connect(m_buttonVideoFilterSticker, &QPushButton::clicked, this,
             &ControllerWidget::onVideoFilterStickerButtonClicked);
 
+    // GPU 编解码开关（默认关闭，即使用 CPU）
+    m_checkBoxGpu = new QCheckBox("GPU 编解码", this);
+    m_checkBoxGpu->setChecked(false);
+    m_checkBoxGpu->setToolTip("勾选后使用 NVIDIA GPU 进行视频编解码，需重新打开视频或重新录制生效");
+    connect(m_checkBoxGpu, &QCheckBox::toggled, this, &ControllerWidget::onGpuCheckBoxToggled);
+
     // 布局设置
     auto* layout = new QHBoxLayout(this);
     if (m_buttonImport) layout->addWidget(m_buttonImport);
@@ -58,6 +64,7 @@ ControllerWidget::ControllerWidget(QWidget* parent, std::shared_ptr<av::IPlayer>
     layout->addWidget(m_buttonVideoFilterGray);
     layout->addWidget(m_buttonVideoFilterInvert);
     layout->addWidget(m_buttonVideoFilterSticker);
+    layout->addWidget(m_checkBoxGpu);
     setLayout(layout);
 
 #ifdef DEBUG_PATH
@@ -175,5 +182,13 @@ void ControllerWidget::onVideoFilterStickerButtonClicked() {
     } else {
         m_player->RemoveVideoFilter(av::VideoFilterType::kSticker);
         m_buttonVideoFilterSticker->setText("添加贴纸滤镜");
+    }
+}
+
+void ControllerWidget::onGpuCheckBoxToggled(bool checked) {
+    if (!m_player) return;
+    m_player->SetUseGpu(checked);
+    if (checked) {
+        QMessageBox::information(nullptr, "提示", "已开启 GPU 编解码。\n请重新打开视频或重新开始录制以生效。");
     }
 }

@@ -30,6 +30,7 @@ public:
     void SetListener(Listener* listener) override;
     bool Configure(FileWriterParameters& parameters, int flags) override;
     void NotifyVideoFrame(std::shared_ptr<IVideoFrame> videoFrame) override;
+    void SetUseGpu(bool useGpu) override;
 
 private:
     void ThreadLoop();
@@ -55,6 +56,7 @@ private:
 
     std::shared_ptr<VideoFilter> m_flipVerticalFilter;  // 垂直翻转滤镜
     unsigned int m_textureId{0};
+    bool m_useGpu{false};  // 是否使用 GPU 编码（默认 false）
 
     AVCodecContext* m_encodeCtx{nullptr};
     SwsContext* m_swsCtx{nullptr};

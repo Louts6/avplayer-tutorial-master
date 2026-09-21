@@ -35,6 +35,9 @@ public:
     int GetVideoWidth() override;
     int GetVideoHeight() override;
 
+    void SetUseGpu(bool useGpu) override;
+    bool IsUsingGpu() override;
+
 private:
     void ThreadLoop();
     void CheckFlushPacket();
@@ -52,6 +55,8 @@ private:
     AVCodecContext* m_codecContext{nullptr};  // 解码器上下文
     SwsContext* m_swsContext{nullptr};        // 缩放上下文
     AVRational m_timeBase{AVRational{1, 1}};
+    bool m_useGpu{false};                     // 是否使用 GPU 解码（默认 false）
+    bool m_isGpuDecoder{false};               // 实际使用的是否为 GPU 解码器
 
     // AVPacket 队列
     std::list<std::shared_ptr<IAVPacket>> m_packetQueue;

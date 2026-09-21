@@ -27,7 +27,7 @@ static const char* vertexShaderSource = R"(
     void main()
     {
         gl_Position = vec4(aPos, 1.0);
-        TexCoord = aTexCoord;
+        TexCoord = vec2(aTexCoord.x, 1.0 - aTexCoord.y);
     }
 )";
 
@@ -59,6 +59,12 @@ void VideoDisplayView::InitializeGL() {
         return;
     }
 #endif
+    const GLubyte* glVendor   = glGetString(GL_VENDOR);
+    const GLubyte* glRenderer = glGetString(GL_RENDERER);
+    const GLubyte* glVersion  = glGetString(GL_VERSION);
+    std::cout << "[GL INFO] Vendor: "   << (glVendor   ? (const char*)glVendor   : "(null)") << std::endl;
+    std::cout << "[GL INFO] Renderer: " << (glRenderer ? (const char*)glRenderer : "(null)") << std::endl;
+    std::cout << "[GL INFO] Version: "  << (glVersion  ? (const char*)glVersion  : "(null)") << std::endl;
     m_shaderProgram = GLUtils::CompileAndLinkProgram(vertexShaderSource, fragmentShaderSource);
 
     float vertices[] = {// positions         // texture coords

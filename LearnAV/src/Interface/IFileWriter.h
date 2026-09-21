@@ -22,6 +22,9 @@ struct IFileWriter {
     virtual void NotifyAudioFinished() = 0;
     virtual void NotifyVideoFinished() = 0;
 
+    // 设置是否使用 GPU 编码（默认 false，即 CPU 编码）
+    virtual void SetUseGpu(bool useGpu) = 0;
+
     virtual ~IFileWriter() = default;
 
     static IFileWriter* Create(std::shared_ptr<GLContext> glContext);

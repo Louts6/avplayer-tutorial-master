@@ -21,6 +21,9 @@ struct IVideoEncoder {
     virtual void SetListener(Listener* listener) = 0;
     virtual bool Configure(FileWriterParameters& parameters, int flags) = 0;
     virtual void NotifyVideoFrame(std::shared_ptr<IVideoFrame> videoFrame) = 0;
+
+    // 设置是否使用 GPU 编码（默认 false，即 CPU 编码）
+    virtual void SetUseGpu(bool useGpu) = 0;
 };
 
 }  // namespace av

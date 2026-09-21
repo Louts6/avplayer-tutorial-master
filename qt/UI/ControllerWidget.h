@@ -5,6 +5,7 @@
 #ifndef LEARNAV_CONTROLLERWIDGET_H
 #define LEARNAV_CONTROLLERWIDGET_H
 
+#include <QCheckBox>
 #include <QLabel>
 #include <QPushButton>
 #include <QWidget>
@@ -27,6 +28,7 @@ private slots:
     void onVideoFilterGrayButtonClicked();
     void onVideoFilterInvertButtonClicked();
     void onVideoFilterStickerButtonClicked();
+    void onGpuCheckBoxToggled(bool checked);
 
 private:
     QPushButton* m_buttonImport{nullptr};
@@ -36,6 +38,7 @@ private:
     QPushButton* m_buttonVideoFilterGray{nullptr};
     QPushButton* m_buttonVideoFilterInvert{nullptr};
     QPushButton* m_buttonVideoFilterSticker{nullptr};
+    QCheckBox* m_checkBoxGpu{nullptr};
 
     std::shared_ptr<av::IPlayer> m_player;
 };

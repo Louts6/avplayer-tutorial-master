@@ -8,6 +8,10 @@
 #include "Utils/GLUtils.h"
 #include "VideoFilter/VideoFilter.h"
 
+extern "C" {
+#include <libavutil/opt.h>
+}
+
 namespace av {
 
 static const char* kVideoEncoderTag = "VideoEncoder";
@@ -31,7 +35,22 @@ void VideoEncoder::SetListener(Listener* listener) {
 }
 
 bool VideoEncoder::Configure(FileWriterParameters& parameters, int flags) {
-    const AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+    // 根据开关选择编码器：GPU（NVIDIA NVENC）或 CPU 软件编码
+    const AVCodec* codec = nullptr;
+    bool isGpuEncoder = false;
+    if (m_useGpu) {
+        codec = avcodec_find_encoder_by_name("h264_nvenc");
+        if (codec) {
+            isGpuEncoder = true;
+            LOGI(kVideoEncoderTag, "Using GPU encoder: h264_nvenc");
+        } else {
+            LOGW(kVideoEncoderTag, "GPU encoder (h264_nvenc) not found, fallback to CPU");
+        }
+    }
+    if (!codec) {
+        codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+        if (codec) LOGI(kVideoEncoderTag, "Using CPU encoder: h264 (libx264)");
+    }
     if (!codec) {
         LOGE(kVideoEncoderTag, "Codec not found");
         return false;
@@ -51,6 +70,12 @@ bool VideoEncoder::Configure(FileWriterParameters& parameters, int flags) {
     m_encodeCtx->gop_size = 30;
     m_encodeCtx->max_b_frames = 1;
     m_encodeCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+
+    // NVENC 专属参数：preset 控制速度/质量权衡，fast 是较快的预设
+    if (isGpuEncoder) {
+        av_opt_set(m_encodeCtx->priv_data, "preset", "fast", 0);
+        av_opt_set(m_encodeCtx->priv_data, "rc", "vbr", 0);
+    }
 
     if (avcodec_open2(m_encodeCtx, codec, nullptr) < 0) {
         LOGE(kVideoEncoderTag, "Could not open codec");
@@ -211,5 +236,7 @@ void VideoEncoder::EncodeVideoFrame(const AVFrame* avFrame) {
         if (m_listener) m_listener->OnVideoEncoderNotifyFinished();
     }
 }
+
+void VideoEncoder::SetUseGpu(bool useGpu) { m_useGpu = useGpu; }
 
 }  // namespace av

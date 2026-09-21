@@ -46,6 +46,9 @@ public:
     void StopRecording() override;
     bool IsRecording() override;
 
+    void SetUseGpu(bool useGpu) override;
+    bool IsUsingGpu() override;
+
 private:
     void InitTaskPoolGLContext();
     void DestroyTaskPoolGLContext();
@@ -103,6 +106,7 @@ private:
 
     std::atomic<bool> m_isPlaying{false};
     std::atomic<bool> m_isRecording{false};
+    std::atomic<bool> m_useGpu{false};  // 是否使用 GPU 编解码（默认 false）
 };
 
 }  // namespace av

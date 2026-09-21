@@ -28,6 +28,10 @@ struct IVideoDecoder {
     virtual int GetVideoWidth() = 0;
     virtual int GetVideoHeight() = 0;
 
+    // 设置是否使用 GPU 解码（默认 false，即 CPU 解码）
+    virtual void SetUseGpu(bool useGpu) = 0;
+    virtual bool IsUsingGpu() = 0;
+
     virtual ~IVideoDecoder() = default;
 
     static IVideoDecoder* Create();

@@ -93,6 +93,7 @@ void Player::SetPlaybackListener(std::shared_ptr<IPlaybackListener> listener) {
 
 bool Player::Open(std::string& filePath) {
     if (!m_fileReader) return false;
+    m_fileReader->SetUseGpu(m_useGpu);
     return m_fileReader->Open(filePath);
 }
 
@@ -134,6 +135,7 @@ bool Player::StartRecording(const std::string& outputFilePath, int flags) {
     std::lock_guard<std::mutex> lock(m_fileWriterMutex);
     if (m_fileWriter) m_fileWriter->StopWriter();
     m_fileWriter = std::shared_ptr<IFileWriter>(IFileWriter::Create(m_glContext));
+    m_fileWriter->SetUseGpu(m_useGpu);
 
     FileWriterParameters parameters;
     parameters.width = m_fileReader->GetVideoWidth();
@@ -152,6 +154,10 @@ void Player::StopRecording() {
 }
 
 bool Player::IsRecording() { return m_isRecording; }
+
+void Player::SetUseGpu(bool useGpu) { m_useGpu = useGpu; }
+
+bool Player::IsUsingGpu() { return m_useGpu; }
 
 // 继承自IFileReader::Listener
 void Player::OnFileReaderNotifyAudioSamples(std::shared_ptr<IAudioSamples> audioSamples) {

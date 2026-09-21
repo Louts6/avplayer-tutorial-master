@@ -31,6 +31,7 @@ public:
     float GetDuration() override;
     int GetVideoWidth() override;
     int GetVideoHeight() override;
+    void SetUseGpu(bool useGpu) override;
 
 private:
     // 继承自IDeMuxer::Listener
