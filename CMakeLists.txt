@@ -143,6 +143,16 @@ else()
     )
     if(WIN32)
         list(APPEND INCLUDE_DIRS ${FFMPEG_INCLUDE_DIR} ${STB_INCLUDE_DIR} ${GLM_INCLUDE_DIR} ${GLAD_INCLUDE_DIR})
+
+        # CUDA-GL 零拷贝互操作：仅使用 CUDA 头文件，运行时动态加载 nvcuda.dll，
+        # 因此不依赖 cuda.lib，也不影响原有 CPU 解码/渲染路径。
+        if(DEFINED ENV{CUDA_PATH} AND EXISTS "$ENV{CUDA_PATH}/include/cuda.h")
+            list(APPEND INCLUDE_DIRS "$ENV{CUDA_PATH}/include")
+            add_compile_definitions(LEARNAV_HAS_CUDA_INTEROP)
+            message(STATUS "CUDA-GL zero-copy interop enabled: $ENV{CUDA_PATH}")
+        else()
+            message(STATUS "CUDA Toolkit not found, GPU zero-copy interop disabled")
+        endif()
     endif()
 
     file(GLOB_RECURSE LIBRARY_SOURCE_FILES ${PROJECT_ROOT_DIR}/LearnAV/*.cpp)

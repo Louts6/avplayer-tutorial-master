@@ -49,7 +49,7 @@ unsigned int GLUtils::CompileAndLinkProgram(const char* vertexShaderSource, cons
     glLinkProgram(shaderProgram);
 
     // Check linking status
-    int success;
+    int success = 0;
     char infoLog[512];
     glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
     if (!success) {

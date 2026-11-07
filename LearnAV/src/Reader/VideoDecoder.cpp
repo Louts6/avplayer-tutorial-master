@@ -45,10 +45,16 @@ void VideoDecoder::SetStream(struct AVStream* stream) {
     std::lock_guard<std::mutex> lock(m_codecContextMutex);
     CleanupContext();
 
-    // 根据开关选择解码器：GPU（NVIDIA CUVID）或 CPU 软件解码
+    // GPU 解码仅在开关打开且为 H.264 时启用，其余情况走原有 CPU 软解路径
+    const bool useGpu = m_useGpu && stream->codecpar->codec_id == AV_CODEC_ID_H264;
+    if (OpenCodec(stream, useGpu)) m_timeBase = stream->time_base;
+}
+
+bool VideoDecoder::OpenCodec(const AVStream* stream, bool useGpu) {
     const AVCodec* codec = nullptr;
     m_isGpuDecoder = false;
-    if (m_useGpu && stream->codecpar->codec_id == AV_CODEC_ID_H264) {
+
+    if (useGpu) {
         codec = avcodec_find_decoder_by_name("h264_cuvid");
         if (codec) {
             m_isGpuDecoder = true;
@@ -61,25 +67,46 @@ void VideoDecoder::SetStream(struct AVStream* stream) {
         codec = avcodec_find_decoder(stream->codecpar->codec_id);
         if (codec) LOGI(kVideoDecoderTag, "Using CPU decoder: %s", codec->name);
     }
-    if (!codec) return;
+    if (!codec) return false;
 
-    // Allocate a new codec context
     m_codecContext = avcodec_alloc_context3(codec);
-    if (!m_codecContext) return;
+    if (!m_codecContext) return false;
 
-    // Copy codec parameters from the stream to the codec context
     if (avcodec_parameters_to_context(m_codecContext, stream->codecpar) < 0) {
         avcodec_free_context(&m_codecContext);
-        return;
+        return false;
     }
 
-    // Open the codec
+    if (m_isGpuDecoder) {
+        // 标准硬件解码流程：显式创建 CUDA 设备上下文并挂到解码器上。
+        // h264_cuvid 内部会自建上下文，但显式创建可保证解码与 CUDA-GL 互操作使用
+        // 同一个 CUDA 上下文（vaapi/d3d11va 等硬解同样依赖该字段）。
+        if (av_hwdevice_ctx_create(&m_hwDeviceCtx, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0) < 0) {
+            LOGW(kVideoDecoderTag, "Failed to create CUDA device context, fallback to CPU decoder");
+            avcodec_free_context(&m_codecContext);
+            m_isGpuDecoder = false;
+
+            codec = avcodec_find_decoder(stream->codecpar->codec_id);
+            if (!codec) return false;
+            m_codecContext = avcodec_alloc_context3(codec);
+            if (!m_codecContext) return false;
+            if (avcodec_parameters_to_context(m_codecContext, stream->codecpar) < 0) {
+                avcodec_free_context(&m_codecContext);
+                return false;
+            }
+        } else {
+            m_codecContext->hw_device_ctx = av_buffer_ref(m_hwDeviceCtx);
+        }
+    }
+
     if (avcodec_open2(m_codecContext, codec, nullptr) < 0) {
         avcodec_free_context(&m_codecContext);
-        return;
+        av_buffer_unref(&m_hwDeviceCtx);
+        m_isGpuDecoder = false;
+        return false;
     }
 
-    m_timeBase = stream->time_base;
+    return true;
 }
 
 void VideoDecoder::Decode(std::shared_ptr<IAVPacket> packet) {
@@ -179,6 +206,39 @@ void VideoDecoder::DecodeAVPacket() {
             return;
         }
 
+        // GPU 解码帧：直接把 CUDA 硬件帧交给管线，由 CUDA-GL 互操作完成转换与上屏，
+        // 避免 av_hwframe_transfer_data(GPU→CPU) + sws_scale(CPU) + glTexImage2D(CPU→GPU) 往返拷贝。
+        if (frame->format == AV_PIX_FMT_CUDA && frame->hw_frames_ctx) {
+            AVFrame* hwFrame = av_frame_alloc();
+            if (!hwFrame) {
+                av_frame_free(&frame);
+                return;
+            }
+            av_frame_move_ref(hwFrame, frame);  // 转移所有权，frame 可继续接收下一帧
+
+            auto videoFrame = std::make_shared<IVideoFrame>();
+            videoFrame->width = hwFrame->width;
+            videoFrame->height = hwFrame->height;
+            videoFrame->pts = hwFrame->pts;
+            videoFrame->duration = hwFrame->duration;
+            videoFrame->timebaseNum = m_timeBase.num;
+            videoFrame->timebaseDen = m_timeBase.den;
+            videoFrame->pixelFormat = hwFrame->format;
+            videoFrame->hardwareFrame = std::shared_ptr<void>(hwFrame, [](void* ptr) {
+                AVFrame* f = static_cast<AVFrame*>(ptr);
+                av_frame_free(&f);
+            });
+            videoFrame->releaseCallback = m_pipelineReleaseCallback;
+
+            --m_pipelineResourceCount;
+
+            {
+                std::lock_guard<std::recursive_mutex> lock(m_listenerMutex);
+                if (m_listener) m_listener->OnNotifyVideoFrame(videoFrame);
+            }
+            continue;
+        }
+
         // 如果是 GPU 解码帧（AV_PIX_FMT_CUDA），需要从显存拷贝到内存
         AVFrame* cpuFrame = frame;
         AVFrame* transferredFrame = nullptr;
@@ -260,6 +320,7 @@ void VideoDecoder::ReleaseVideoPipelineResource() {
 
 void VideoDecoder::CleanupContext() {
     if (m_codecContext) avcodec_free_context(&m_codecContext);
+    if (m_hwDeviceCtx) av_buffer_unref(&m_hwDeviceCtx);
     if (m_swsContext) sws_freeContext(m_swsContext);
 }
 

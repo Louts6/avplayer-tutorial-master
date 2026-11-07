@@ -7,11 +7,15 @@
 
 #include <condition_variable>
 #include <list>
+#include <memory>
 #include <mutex>
 #include <thread>
 
 #include "Interface/IVideoPipeline.h"
+#include "Utils/CudaFrameRenderer.h"
 #include "VideoFilter/VideoFilter.h"
+
+struct SwsContext;
 
 namespace av {
 
@@ -32,6 +36,11 @@ private:
     void PrepareVideoFrame(std::shared_ptr<IVideoFrame> videoFrame);
     void PrepareTempTexture(int width, int height);
     void RenderVideoFilter(std::shared_ptr<IVideoFrame> videoFrame);
+
+    /** GPU 零拷贝路径：CUDA 硬件帧直接经 CUDA-GL 互操作转成 RGBA 纹理。 */
+    bool PrepareHardwareFrame(std::shared_ptr<IVideoFrame> videoFrame);
+    /** 互操作不可用时的回退：GPU→CPU 传输后做 CPU 颜色转换（保持原有 CPU 逻辑可用）。 */
+    void ConvertHardwareFrameToCpu(std::shared_ptr<IVideoFrame> videoFrame);
 
     void ThreadLoop();
 
@@ -56,6 +65,15 @@ private:
     std::list<std::shared_ptr<VideoFilter>> m_removedVideoFilters;
     std::mutex m_videoFilterMutex;
     TextureInfo m_tempTexture;
+
+    // GPU 零拷贝：CUDA 硬件帧 → GL 纹理（仅 GL 线程使用）
+    std::unique_ptr<CudaFrameRenderer> m_cudaRenderer;
+
+    // 回退路径的 CPU 颜色转换上下文
+    SwsContext* m_swsContext{nullptr};
+    int m_swsWidth{0};
+    int m_swsHeight{0};
+    int m_swsFormat{-1};
 
     std::condition_variable m_queueCondVar;
     std::shared_ptr<std::thread> m_thread;

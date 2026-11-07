@@ -13,6 +13,7 @@ Pods
 
 /build
 /build-mingw/
+/build-msvc/
 /captures
 .externalNativeBuild
 

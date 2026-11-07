@@ -53,10 +53,13 @@ private:
     // 解码 & 缩放
     std::mutex m_codecContextMutex;
     AVCodecContext* m_codecContext{nullptr};  // 解码器上下文
-    SwsContext* m_swsContext{nullptr};        // 缩放上下文
+    AVBufferRef* m_hwDeviceCtx{nullptr};      // CUDA 硬件设备上下文（GPU 解码时创建）
+    SwsContext* m_swsContext{nullptr};        // 缩放上下文（仅 CPU 路径使用）
     AVRational m_timeBase{AVRational{1, 1}};
     bool m_useGpu{false};                     // 是否使用 GPU 解码（默认 false）
     bool m_isGpuDecoder{false};               // 实际使用的是否为 GPU 解码器
+
+    bool OpenCodec(const AVStream* stream, bool useGpu);
 
     // AVPacket 队列
     std::list<std::shared_ptr<IAVPacket>> m_packetQueue;

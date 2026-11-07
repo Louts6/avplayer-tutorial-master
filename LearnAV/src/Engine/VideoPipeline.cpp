@@ -7,6 +7,12 @@
 #include "Log.h"
 #include "Utils/GLUtils.h"
 
+extern "C" {
+#include <libavutil/imgutils.h>  // av_image_get_buffer_size
+#include <libavutil/hwcontext.h> // av_hwframe_transfer_data
+#include <libswscale/swscale.h>
+}
+
 static const char* kVideoPipelineTag = "VideoPipeline";
 
 namespace av {
@@ -87,12 +93,22 @@ void VideoPipeline::PrepareVideoFrame(std::shared_ptr<IVideoFrame> frame) {
     // Ensure temp texture exists and matches frame size before any filter render (FBO attachment).
     PrepareTempTexture(frame->width, frame->height);
 
-    glGenTextures(1, &frame->textureId);
-    glBindTexture(GL_TEXTURE_2D, frame->textureId);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frame->width, frame->height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-                 frame->data.get());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // GPU 硬件帧：优先走 CUDA-GL 零拷贝，失败则回退到 GPU→CPU 传输
+    if (frame->IsHardwareFrame()) {
+        if (!PrepareHardwareFrame(frame)) ConvertHardwareFrameToCpu(frame);
+    }
+
+    // 上传（或回退后上传）RGBA 源纹理；GPU 零拷贝路径已直接生成纹理
+    if (frame->textureId == 0) {
+        if (!frame->data) return;
+
+        glGenTextures(1, &frame->textureId);
+        glBindTexture(GL_TEXTURE_2D, frame->textureId);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frame->width, frame->height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                     frame->data.get());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    }
 
     // 垂直翻转画面
     if (!m_flipVerticalFilter) {
@@ -103,6 +119,65 @@ void VideoPipeline::PrepareVideoFrame(std::shared_ptr<IVideoFrame> frame) {
     }
 
     std::swap(frame->textureId, m_tempTexture.id);
+}
+
+bool VideoPipeline::PrepareHardwareFrame(std::shared_ptr<IVideoFrame> frame) {
+    if (!m_cudaRenderer) m_cudaRenderer = std::make_unique<CudaFrameRenderer>();
+
+    unsigned int texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frame->width, frame->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    if (!m_cudaRenderer->RenderHardwareFrame(frame->hardwareFrame.get(), texture, frame->width, frame->height)) {
+        glDeleteTextures(1, &texture);
+        return false;
+    }
+
+    frame->textureId = texture;
+    return true;
+}
+
+void VideoPipeline::ConvertHardwareFrameToCpu(std::shared_ptr<IVideoFrame> frame) {
+    auto* hwFrame = static_cast<AVFrame*>(frame->hardwareFrame.get());
+    AVFrame* swFrame = av_frame_alloc();
+    if (!swFrame) return;
+
+    if (av_hwframe_transfer_data(swFrame, hwFrame, 0) < 0) {
+        LOGE(kVideoPipelineTag, "Failed to transfer hardware frame to CPU, frame dropped");
+        av_frame_free(&swFrame);
+        return;
+    }
+
+    const int format = swFrame->format;
+    if (!m_swsContext || m_swsWidth != swFrame->width || m_swsHeight != swFrame->height || m_swsFormat != format) {
+        if (m_swsContext) sws_freeContext(m_swsContext);
+        m_swsContext = sws_getContext(swFrame->width, swFrame->height, static_cast<AVPixelFormat>(format),
+                                      swFrame->width, swFrame->height, AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr,
+                                      nullptr, nullptr);
+        m_swsWidth = swFrame->width;
+        m_swsHeight = swFrame->height;
+        m_swsFormat = format;
+    }
+    if (!m_swsContext) {
+        av_frame_free(&swFrame);
+        return;
+    }
+
+    const int numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGBA, swFrame->width, swFrame->height, 1);
+    std::shared_ptr<uint8_t> buffer(new uint8_t[numBytes], std::default_delete<uint8_t[]>());
+
+    uint8_t* dstData[4] = {buffer.get(), nullptr, nullptr, nullptr};
+    int dstLinesize[4] = {swFrame->width * 4, 0, 0, 0};
+    sws_scale(m_swsContext, swFrame->data, swFrame->linesize, 0, swFrame->height, dstData, dstLinesize);
+
+    frame->width = swFrame->width;
+    frame->height = swFrame->height;
+    frame->data = std::move(buffer);
+    av_frame_free(&swFrame);
 }
 
 void VideoPipeline::RenderVideoFilter(std::shared_ptr<IVideoFrame> frame) {
@@ -134,7 +209,10 @@ static void EnsureFBO(unsigned int& fbo) {
 }
 
 void VideoPipeline::ThreadLoop() {
-    m_sharedGLContext->Initialize();
+    if (!m_sharedGLContext->Initialize()) {
+        LOGE(kVideoPipelineTag, "Failed to initialize GL context on pipeline thread, video rendering disabled");
+        return;
+    }
 
     unsigned int fbo{0};
 
@@ -186,6 +264,17 @@ void VideoPipeline::ThreadLoop() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDeleteFramebuffers(1, &fbo);
     }
+
+    // GPU 零拷贝与回退路径资源必须在 GL 线程释放
+    if (m_cudaRenderer) {
+        m_cudaRenderer->Release();
+        m_cudaRenderer.reset();
+    }
+    if (m_swsContext) {
+        sws_freeContext(m_swsContext);
+        m_swsContext = nullptr;
+    }
+
     m_sharedGLContext->DoneCurrent();
     m_sharedGLContext->Destroy();
 }

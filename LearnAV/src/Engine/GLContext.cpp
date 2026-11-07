@@ -43,15 +43,25 @@ bool GLContext::Initialize() {
 
     // Qt 6 中 QOffscreenSurface 是 QWindow 派生类，必须在 GUI 线程创建。
     // QOpenGLContext 必须在使用它的线程中 create()，否则 Qt 会拒绝跨线程 makeCurrent。
+    // 注意：lambda 若内部直接写 tlsSurface()，实际写的是 GUI 线程的 thread_local，
+    // 当前线程拿到的仍是 nullptr，导致 makeCurrent 失败（FBO/纹理全部创建失败）。
+    // 因此用局部变量回传指针，再由当前线程写入自己的 tlsSurface()。
+    QOffscreenSurface* surface = nullptr;
     if (QThread::currentThread() == qApp->thread()) {
-        tlsSurface() = new QOffscreenSurface();
-        tlsSurface()->create();
+        surface = new QOffscreenSurface();
+        surface->create();
     } else {
-        QMetaObject::invokeMethod(qApp, [this]() {
-            tlsSurface() = new QOffscreenSurface();
-            tlsSurface()->create();
+        QMetaObject::invokeMethod(qApp, [&surface, this]() {
+            surface = new QOffscreenSurface();
+            surface->setFormat(m_sharedGLContext->format());
+            surface->create();
         }, Qt::BlockingQueuedConnection);
     }
+    if (!surface || !surface->isValid()) {
+        LOGE("GLContext", "Failed to create offscreen surface!");
+        return false;
+    }
+    tlsSurface() = surface;
 
     tlsContext() = new QOpenGLContext();
     tlsContext()->setShareContext(m_sharedGLContext);
@@ -60,7 +70,10 @@ bool GLContext::Initialize() {
         return false;
     }
 
-    tlsContext()->makeCurrent(tlsSurface());
+    if (!tlsContext()->makeCurrent(tlsSurface())) {
+        LOGE("GLContext", "Failed to make GL context current in this thread!");
+        return false;
+    }
     return true;
 }
 
@@ -88,7 +101,13 @@ void GLContext::Destroy() {
 }
 
 void GLContext::MakeCurrent() {
-    if (tlsContext() && tlsSurface()) tlsContext()->makeCurrent(tlsSurface());
+    if (!tlsContext() || !tlsSurface()) {
+        LOGE("GLContext", "MakeCurrent called before Initialize() in this thread!");
+        return;
+    }
+    if (!tlsContext()->makeCurrent(tlsSurface())) {
+        LOGE("GLContext", "Failed to make GL context current in this thread!");
+    }
 }
 
 void GLContext::DoneCurrent() {
