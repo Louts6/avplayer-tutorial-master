@@ -106,7 +106,7 @@ void MainWindow::onSliderMoved(int value) {
 void MainWindow::onPlaylistPlayRequested(int index) {
     if (m_controller) {
         m_controller->play(index);
-        m_controllerWidget->findChild<QPushButton*>()->setText(QStringLiteral("暂停"));
+        m_controllerWidget->findChild<QPushButton*>()->setText(QStringLiteral("停止"));
     }
 }
 

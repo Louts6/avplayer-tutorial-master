@@ -15,13 +15,7 @@
 
 ControllerWidget::ControllerWidget(QWidget* parent, std::shared_ptr<av::IPlayer> player)
     : QWidget(parent), m_player(player) {
-#if !defined(DEBUG_PATH)
-    // 初始化导入按钮
-    m_buttonImport = new QPushButton("导入", this);
-    connect(m_buttonImport, &QPushButton::clicked, this, &ControllerWidget::onImportButtonClicked);
-#endif
-
-    // 初始化播放按钮
+    // 初始化播放按钮（播放/停止切换）
     m_buttonPlay = new QPushButton("播放", this);
     connect(m_buttonPlay, &QPushButton::clicked, this, &ControllerWidget::onPlayButtonClicked);
 
@@ -55,7 +49,6 @@ ControllerWidget::ControllerWidget(QWidget* parent, std::shared_ptr<av::IPlayer>
 
     // 布局设置
     auto* layout = new QHBoxLayout(this);
-    if (m_buttonImport) layout->addWidget(m_buttonImport);
     layout->addWidget(m_buttonPlay);
     layout->addWidget(m_buttonExport);
     layout->addStretch();
@@ -67,28 +60,17 @@ ControllerWidget::ControllerWidget(QWidget* parent, std::shared_ptr<av::IPlayer>
     setLayout(layout);
 }
 
-void ControllerWidget::onImportButtonClicked() {
-    if (!m_player) return;
-
-    QString videoFilePath = QFileDialog::getOpenFileName(
-        nullptr, tr("打开视频文件"), QStandardPaths::writableLocation(QStandardPaths::HomeLocation),
-        "media files(*.avi *.mp4 *.mov)", nullptr, QFileDialog::DontUseNativeDialog);
-
-    if (videoFilePath.isEmpty()) return;
-
-    std::string videoFilePathStd = videoFilePath.toStdString();
-    m_player->Open(videoFilePathStd);
-}
-
 void ControllerWidget::onPlayButtonClicked() {
-    // 优先走媒体调度器（可统一处理视频 / 图片 / PDF 的暂停/继续）
+    // 优先走媒体调度器（可统一处理视频 / 图片 / PDF 的播放/停止）
     if (m_controller) {
         if (m_controller->isPlaying()) {
-            m_controller->pause();
+            // 播放中 -> 停止
+            m_controller->stop();
             m_buttonPlay->setText("播放");
         } else {
-            m_controller->resume();
-            m_buttonPlay->setText("暂停");
+            // 停止中 -> 从播放列表第一项开始播放
+            m_controller->play(0);
+            m_buttonPlay->setText("停止");
         }
         return;
     }
@@ -96,11 +78,11 @@ void ControllerWidget::onPlayButtonClicked() {
     if (!m_player) return;
 
     if (m_player->IsPlaying()) {
-        m_player->Pause();
+        m_player->Stop();
         m_buttonPlay->setText("播放");
     } else {
         m_player->Play();
-        m_buttonPlay->setText("暂停");
+        m_buttonPlay->setText("停止");
     }
 }
 

@@ -43,6 +43,7 @@ public:
     void stop();
 
     bool isPlaying() const { return m_playing; }
+    bool isBusy() const { return m_busy; }
     int  currentIndex() const { return m_currentIndex; }
 
 signals:
@@ -76,6 +77,7 @@ private:
     int  m_currentIndex{-1};
     bool m_playing{false};
     bool m_paused{false};
+    bool m_busy{false};  ///< 防重入：playVideo 执行期间为 true
 
     // PDF 播放状态
     std::unique_ptr<QPdfDocument> m_pdfDoc;

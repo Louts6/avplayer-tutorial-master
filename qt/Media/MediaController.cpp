@@ -26,8 +26,12 @@ public:
     }
     void NotifyPlaybackPaused() override {}
     void NotifyPlaybackEOF() override {
-        if (m_owner) {
-            QMetaObject::invokeMethod(m_owner, [owner = m_owner]() { owner->playNext(); }, Qt::QueuedConnection);
+        // 仅在正常播放中且非切换媒体时才切到下一条；
+        // 用户主动停止(m_playing=false)或正在切源(m_busy=true)时忽略。
+        if (m_owner && m_owner->isPlaying() && !m_owner->isBusy()) {
+            QMetaObject::invokeMethod(m_owner, [owner = m_owner]() {
+                if (owner->isPlaying() && !owner->isBusy()) owner->playNext();
+            }, Qt::QueuedConnection);
         }
     }
 
@@ -52,7 +56,11 @@ MediaController::~MediaController() { stop(); }
 
 void MediaController::setPlaylist(std::shared_ptr<MediaPlaylist> playlist) { m_playlist = std::move(playlist); }
 
-void MediaController::play(int index) { playItem(index); }
+void MediaController::play(int index) {
+    // 防重入：若上一次 playVideo 尚未完成，先等待其结束
+    if (m_busy) return;
+    playItem(index);
+}
 
 void MediaController::playItem(int index) {
     if (!m_playlist || index < 0 || index >= m_playlist->count()) {
@@ -81,6 +89,8 @@ void MediaController::playVideo(const MediaItem& item) {
         playNext();
         return;
     }
+    // 防重入：标记 busy，Stop→Open→Play 期间忽略新的 play 请求
+    m_busy = true;
     // 切换到新视频前先停止上一条的播放状态，保证 demuxer / 解码器干净重启
     m_player->Stop();
     std::string path = item.path.toStdString();
@@ -90,8 +100,11 @@ void MediaController::playVideo(const MediaItem& item) {
         m_player->Play();
     } else {
         LOGE(kMediaTag, "Failed to open video: %s", path.c_str());
+        m_busy = false;
         playNext();
+        return;
     }
+    m_busy = false;
 }
 
 void MediaController::playImage(const MediaItem& item) {
@@ -210,6 +223,8 @@ void MediaController::onSlideTick() {
 }
 
 void MediaController::playNext() {
+    // 若用户已主动停止，则不再自动切到下一条
+    if (!m_playing) return;
     endSlide();
     if (!m_playlist || m_playlist->count() == 0) {
         m_playing = false;
@@ -241,9 +256,12 @@ void MediaController::resume() {
 }
 
 void MediaController::stop() {
+    // 先标记已停止，确保 Stop 过程中触发的 EOF 回调不会再启动下一条
+    m_playing = false;
+    m_paused  = false;
+    m_busy    = false;
     endSlide();
     if (m_player) m_player->Stop();
-    m_playing = false;
 }
 
 }  // namespace av

@@ -24,7 +24,6 @@ public:
     void setMediaController(av::MediaController* controller) { m_controller = controller; }
 
 private slots:
-    void onImportButtonClicked();
     void onPlayButtonClicked();
     void onExportButtonClicked();
     void onVideoFilterFlipVerticalButtonClicked();
@@ -34,7 +33,6 @@ private slots:
     void onGpuCheckBoxToggled(bool checked);
 
 private:
-    QPushButton* m_buttonImport{nullptr};
     QPushButton* m_buttonPlay{nullptr};
     QPushButton* m_buttonExport{nullptr};
     QPushButton* m_buttonVideoFilterFlipVertical{nullptr};
