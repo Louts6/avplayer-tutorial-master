@@ -11,6 +11,9 @@ Pods
 *.xcworkspacedata
 *.user
 
+# 无关独立 Demo
+/BlendingDemo/
+
 /build
 /build-mingw/
 /build-msvc/

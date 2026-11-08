@@ -20,7 +20,9 @@ namespace av {
 IVideoPipeline* IVideoPipeline::Create(std::shared_ptr<GLContext> glContext) { return new VideoPipeline(glContext); }
 
 VideoPipeline::VideoPipeline(std::shared_ptr<GLContext> glContext)
-    : m_sharedGLContext(glContext), m_thread(std::make_shared<std::thread>(&VideoPipeline::ThreadLoop, this)) {}
+    : m_sharedGLContext(glContext) {
+    Start();
+}
 
 VideoPipeline::~VideoPipeline() { Stop(); }
 
@@ -69,7 +71,17 @@ void VideoPipeline::Stop() {
         m_abort = true;
         m_queueCondVar.notify_all();
     }
-    if (m_thread->joinable()) m_thread->join();
+    if (m_thread && m_thread->joinable()) m_thread->join();
+    m_thread.reset();
+}
+
+void VideoPipeline::Start() {
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    // 若线程已在运行则无需重启
+    if (m_thread && m_thread->joinable()) return;
+    m_abort = false;
+    m_frameQueue.clear();
+    m_thread = std::make_shared<std::thread>(&VideoPipeline::ThreadLoop, this);
 }
 
 void VideoPipeline::PrepareTempTexture(int width, int height) {

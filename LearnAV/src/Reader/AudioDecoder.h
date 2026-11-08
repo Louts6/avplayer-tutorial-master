@@ -60,7 +60,7 @@ private:
 
     SyncNotifier m_notifier;
 
-    std::thread m_thread;
+    std::shared_ptr<std::thread> m_thread;
     std::atomic<bool> m_paused{true};
     std::atomic<bool> m_abort{false};
 

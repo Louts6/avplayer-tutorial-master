@@ -16,7 +16,7 @@ IAudioDecoder* IAudioDecoder::Create(unsigned int channels, unsigned int sampleR
 AudioDecoder::AudioDecoder(unsigned int channels, unsigned int sampleRate)
     : m_targetChannels(channels), m_targetSampleRate(sampleRate) {
     m_pipelineReleaseCallback = std::make_shared<std::function<void()>>([&]() { ReleaseAudioPipelineResource(); });
-    m_thread = std::thread(&AudioDecoder::ThreadLoop, this);
+    Start();
 }
 
 AudioDecoder::~AudioDecoder() {
@@ -38,6 +38,7 @@ void AudioDecoder::SetStream(AVStream* stream) {
         std::lock_guard<std::mutex> lock(m_packetQueueMutex);
         m_packetQueue.clear();
     }
+    m_pipelineResourceCount = 3;
 
     std::lock_guard<std::mutex> lock(m_codecContextMutex);
     CleanupContext();
@@ -92,7 +93,14 @@ void AudioDecoder::Decode(std::shared_ptr<IAVPacket> packet) {
 }
 
 void AudioDecoder::Start() {
+    if (m_thread && m_thread->joinable()) {
+        m_paused = false;
+        m_notifier.Notify();
+        return;
+    }
+    m_abort = false;
     m_paused = false;
+    m_thread = std::make_shared<std::thread>(&AudioDecoder::ThreadLoop, this);
     m_notifier.Notify();
 }
 
@@ -101,7 +109,8 @@ void AudioDecoder::Pause() { m_paused = true; }
 void AudioDecoder::Stop() {
     m_abort = true;
     m_notifier.Notify();
-    if (m_thread.joinable()) m_thread.join();
+    if (m_thread && m_thread->joinable()) m_thread->join();
+    m_thread.reset();
 }
 
 void AudioDecoder::ThreadLoop() {
@@ -125,7 +134,7 @@ void AudioDecoder::CheckFlushPacket() {
     auto packet = m_packetQueue.front();
     if (packet->flags & AVFrameFlag::kFlush) {
         m_packetQueue.pop_front();
-        avcodec_flush_buffers(m_codecContext);
+        if (m_codecContext) avcodec_flush_buffers(m_codecContext);
 
         auto audioSamples = std::make_shared<IAudioSamples>();
         audioSamples->flags |= AVFrameFlag::kFlush;

@@ -84,13 +84,11 @@ void GLContext::CreateOnGUIThread(bool *created) {
 void GLContext::Destroy() {
     // QOffscreenSurface 必须在创建它的线程（GUI 线程）中销毁；
     // QOpenGLContext 也必须在创建它的线程中销毁。
-    if (QThread::currentThread() != qApp->thread() && tlsSurface()) {
-        auto surface = tlsSurface();
-        tlsSurface() = nullptr;
-        QMetaObject::invokeMethod(qApp, [surface]() { delete surface; },
-                                  Qt::BlockingQueuedConnection);
-    } else if (tlsSurface()) {
-        delete tlsSurface();
+    // 注意：不能使用 BlockingQueuedConnection 删除 surface，否则当 GUI 线程
+    // 正在 join 视频管线线程时会形成死锁（管线线程等 GUI 处理删除，GUI 等管线退出）。
+    // 使用 deleteLater 让 GUI 事件循环异步回收即可。
+    if (tlsSurface()) {
+        tlsSurface()->deleteLater();
         tlsSurface() = nullptr;
     }
 

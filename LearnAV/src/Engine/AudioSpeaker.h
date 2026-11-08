@@ -5,7 +5,7 @@
 #ifndef LEARNAV_AUDIOSPEAKER_H
 #define LEARNAV_AUDIOSPEAKER_H
 
-#include <QAudioSink>
+#include <QtMultimedia/QAudioSink>
 #include <QIODevice>
 #include <QMutex>
 #include <QObject>
@@ -24,6 +24,7 @@ public:
     AudioSpeaker(unsigned int channels, unsigned int sampleRate);
     ~AudioSpeaker() override;
 
+    void Start() override;
     void PlayAudioSamples(std::shared_ptr<IAudioSamples> samples) override;
     void Stop() override;
 
@@ -31,6 +32,8 @@ private slots:
     void OnTimer();
 
 private:
+    void StartInternal();
+    void StopInternal();
     void WritePendingData();
     qint64 CalculateBufferSize() const;
 

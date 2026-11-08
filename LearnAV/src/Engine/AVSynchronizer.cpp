@@ -81,6 +81,9 @@ void AVSynchronizer::ThreadLoop() {
         if (m_reset) {
             m_audioQueue.clear();
             m_videoQueue.clear();
+            m_audioStreamInfo.Reset();
+            m_videoStreamInfo.Reset();
+            m_audioActive = false;
             m_reset = false;
         }
         Synchronize();
@@ -111,6 +114,7 @@ void AVSynchronizer::Synchronize() {
             m_videoQueue.clear();
         } else {
             m_audioStreamInfo.currentTimeStamp = audioSamples->GetTimeStamp();
+            m_audioActive = true;
             m_audioQueue.pop_front();
             std::lock_guard<std::mutex> listenerLock(m_listenerMutex);
             if (m_listener) m_listener->OnAVSynchronizerNotifyAudioSamples(audioSamples);
@@ -132,8 +136,9 @@ void AVSynchronizer::Synchronize() {
             continue;
         }
 
-        // 比较音频和视频时间戳，同步音视频
-        auto timeDiff = m_audioStreamInfo.currentTimeStamp - videoFrame->GetTimeStamp();
+        // 比较音频和视频时间戳，同步音视频。无音频流或音频已结束时不做同步等待。
+        const bool noAudio = !m_audioActive || m_audioStreamInfo.isFinished;
+        auto timeDiff = noAudio ? 0.0 : (m_audioStreamInfo.currentTimeStamp - videoFrame->GetTimeStamp());
         if (timeDiff > syncThreshold) {
             // 视频帧落后太多，丢弃这一帧视频（或者快速播放）
             m_videoStreamInfo.currentTimeStamp = videoFrame->GetTimeStamp();

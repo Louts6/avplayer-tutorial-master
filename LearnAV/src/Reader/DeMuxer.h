@@ -51,7 +51,7 @@ private:
 private:
     IDeMuxer::Listener* m_listener{nullptr};
     std::recursive_mutex m_listenerMutex;
-    std::thread m_thread;
+    std::shared_ptr<std::thread> m_thread;
     std::atomic<bool> m_paused{true};
     std::atomic<bool> m_abort{false};
     std::atomic<bool> m_seek{false};

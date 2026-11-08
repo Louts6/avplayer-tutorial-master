@@ -4,9 +4,10 @@
 
 #include "AudioSpeaker.h"
 
-#include <QAudioDevice>
-#include <QAudioFormat>
-#include <QMediaDevices>
+#include <QThread>
+#include <QtMultimedia/QAudioDevice>
+#include <QtMultimedia/QAudioFormat>
+#include <QtMultimedia/QMediaDevices>
 #include <algorithm>
 #include <iostream>
 
@@ -16,10 +17,39 @@ namespace av {
 
 AudioSpeaker::AudioSpeaker(unsigned int channels, unsigned int sampleRate)
     : m_channels(channels), m_sampleRate(sampleRate), m_audioIODevice(nullptr), m_timer(nullptr), m_isPlaying(false) {
+    // 构造函数在 GUI 线程调用，直接初始化
+    StartInternal();
+}
+
+AudioSpeaker::~AudioSpeaker() {
+    StopInternal();
+}
+
+void AudioSpeaker::Start() {
+    // QAudioSink/QTimer 必须在 AudioSpeaker 所属线程（GUI 线程）创建和操作
+    if (QThread::currentThread() != this->thread()) {
+        QMetaObject::invokeMethod(this, &AudioSpeaker::StartInternal, Qt::BlockingQueuedConnection);
+    } else {
+        StartInternal();
+    }
+}
+
+void AudioSpeaker::Stop() {
+    if (QThread::currentThread() != this->thread()) {
+        QMetaObject::invokeMethod(this, &AudioSpeaker::StopInternal, Qt::BlockingQueuedConnection);
+    } else {
+        StopInternal();
+    }
+}
+
+void AudioSpeaker::StartInternal() {
+    QMutexLocker locker(&m_mutex);
+    if (m_isPlaying) return;
+
     // 设置音频格式
     QAudioFormat format;
-    format.setSampleRate(static_cast<int>(sampleRate));
-    format.setChannelCount(static_cast<int>(channels));
+    format.setSampleRate(static_cast<int>(m_sampleRate));
+    format.setChannelCount(static_cast<int>(m_channels));
     format.setSampleFormat(QAudioFormat::Int16);
 
     // 获取默认音频输出设备
@@ -42,21 +72,37 @@ AudioSpeaker::AudioSpeaker(unsigned int channels, unsigned int sampleRate)
 
     if (!m_audioIODevice) {
         LOGE("AudioSpeaker", "Failed to start audio output device.");
-    } else {
-        m_isPlaying = true;
+        m_audioSink.reset();
+        return;
+    }
 
-        // 创建定时器，定期检查缓冲区并写入数据
+    m_isPlaying = true;
+
+    // 创建定时器，定期检查缓冲区并写入数据
+    if (!m_timer) {
         m_timer = new QTimer(this);
         connect(m_timer, &QTimer::timeout, this, &AudioSpeaker::OnTimer);
-        m_timer->start(kTimerIntervalMs);
     }
+    m_timer->start(kTimerIntervalMs);
 }
 
-AudioSpeaker::~AudioSpeaker() {
-    Stop();
+void AudioSpeaker::StopInternal() {
+    QMutexLocker locker(&m_mutex);
+    m_isPlaying = false;
+
+    if (m_timer) {
+        m_timer->stop();
+        delete m_timer;
+        m_timer = nullptr;
+    }
+
     if (m_audioSink) {
         m_audioSink->stop();
+        m_audioSink.reset();
     }
+
+    m_audioQueue.clear();
+    m_audioIODevice = nullptr;
 }
 
 qint64 AudioSpeaker::CalculateBufferSize() const {
@@ -74,11 +120,9 @@ void AudioSpeaker::PlayAudioSamples(std::shared_ptr<IAudioSamples> samples) {
 
     QMutexLocker locker(&m_mutex);
 
-    // 将音频样本添加到队列
+    // 仅入队；写入设备由 OnTimer（GUI 线程）统一处理，
+    // 避免从音频线程调用 QAudioSink/QIODevice 触发 Qt 内部定时器的跨线程错误。
     m_audioQueue.enqueue(samples);
-
-    // 尝试写入待处理的数据
-    WritePendingData();
 }
 
 void AudioSpeaker::WritePendingData() {
@@ -143,23 +187,6 @@ void AudioSpeaker::OnTimer() {
     // 定时器触发时，检查缓冲区并写入待处理的数据
     QMutexLocker locker(&m_mutex);
     WritePendingData();
-}
-
-void AudioSpeaker::Stop() {
-    QMutexLocker locker(&m_mutex);
-    m_isPlaying = false;
-
-    if (m_timer) {
-        m_timer->stop();
-        m_timer->disconnect();
-    }
-
-    if (m_audioSink) {
-        m_audioSink->stop();
-    }
-
-    m_audioQueue.clear();
-    m_audioIODevice = nullptr;
 }
 
 }  // namespace av

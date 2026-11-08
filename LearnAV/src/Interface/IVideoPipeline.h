@@ -24,6 +24,7 @@ struct IVideoPipeline {
     virtual void SetListener(Listener* listener) = 0;
     virtual void NotifyVideoFrame(std::shared_ptr<IVideoFrame> videoFrame) = 0;
     virtual void NotifyVideoFinished() = 0;
+    virtual void Start() = 0;   ///< 启动（或重启）渲染线程，支持连续播放
     virtual void Stop() = 0;
     virtual ~IVideoPipeline() = default;
 

@@ -12,6 +12,7 @@
 namespace av {
 
 struct IAudioSpeaker {
+    virtual void Start() = 0;
     virtual void PlayAudioSamples(std::shared_ptr<IAudioSamples> samples) = 0;
     virtual void Stop() = 0;
     virtual ~IAudioSpeaker() = default;

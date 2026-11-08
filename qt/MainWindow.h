@@ -16,8 +16,11 @@
 #include <QSplitter>
 
 #include "IPlayer.h"
+#include "Media/MediaController.h"
+#include "Media/MediaPlaylist.h"
 #include "UI/ControllerWidget.h"
 #include "UI/PlayerWidget.h"
+#include "UI/PlaylistWidget.h"
 
 class MainWindow : public QWidget {
     Q_OBJECT
@@ -34,24 +37,22 @@ protected:
 
 private slots:
     void onSliderMoved(int value);
+    void onPlaylistPlayRequested(int index);
+    void onControllerCurrentChanged(int index);
+    void onControllerProgress(float current, float total);
+    void onPlaylistChanged();
 
 private:
-    class PlaybackListener : public av::IPlaybackListener {
-    public:
-        explicit PlaybackListener(MainWindow *window);
-        void NotifyPlaybackStarted() override;
-        void NotifyPlaybackTimeChanged(float timeStamp, float duration) override;
-        void NotifyPlaybackPaused() override;
-        void NotifyPlaybackEOF() override;
-
-    private:
-        MainWindow *m_window{nullptr};
-    };
-
-    PlayerWidget *m_playerWidget{nullptr};
-    QSlider *m_progressSlider{nullptr};
+    PlayerWidget     *m_playerWidget{nullptr};
+    QSlider          *m_progressSlider{nullptr};
     ControllerWidget *m_controllerWidget{nullptr};
-    std::shared_ptr<av::IPlayer> m_player;
+    PlaylistWidget   *m_playlistWidget{nullptr};
+
+    std::shared_ptr<av::IPlayer>        m_player;
+    std::shared_ptr<av::MediaPlaylist>  m_playlist;
+    std::shared_ptr<av::MediaController> m_controller;
+
+    QString m_playlistXmlPath;
 };
 
 #endif  // LEARNAV_MAINWINDOW_H

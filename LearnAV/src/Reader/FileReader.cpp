@@ -81,7 +81,14 @@ void FileReader::OnDeMuxStart() { LOGI(kFileReaderTag, "OnDeMuxStart"); }
 
 void FileReader::OnDeMuxStop() { LOGI(kFileReaderTag, "OnDeMuxStop"); }
 
-void FileReader::OnDeMuxEOF() { LOGI(kFileReaderTag, "OnDeMuxEOF"); }
+void FileReader::OnDeMuxEOF() {
+    LOGI(kFileReaderTag, "OnDeMuxEOF");
+    std::lock_guard<std::recursive_mutex> lock(m_listenerMutex);
+    if (m_listener) {
+        m_listener->OnFileReaderNotifyAudioFinished();
+        m_listener->OnFileReaderNotifyVideoFinished();
+    }
+}
 
 void FileReader::OnDeMuxError(int code, const char* msg) { LOGI(kFileReaderTag, "OnDeMuxError"); }
 

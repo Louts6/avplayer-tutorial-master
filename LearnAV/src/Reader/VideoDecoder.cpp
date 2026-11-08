@@ -19,7 +19,7 @@ IVideoDecoder* IVideoDecoder::Create() { return new VideoDecoder(); }
 
 VideoDecoder::VideoDecoder() {
     m_pipelineReleaseCallback = std::make_shared<std::function<void()>>([&]() { ReleaseVideoPipelineResource(); });
-    m_thread = std::thread(&VideoDecoder::ThreadLoop, this);
+    Start();
 }
 
 VideoDecoder::~VideoDecoder() {
@@ -41,6 +41,7 @@ void VideoDecoder::SetStream(struct AVStream* stream) {
         std::lock_guard<std::mutex> lock(m_packetQueueMutex);
         m_packetQueue.clear();
     }
+    m_pipelineResourceCount = 3;
 
     std::lock_guard<std::mutex> lock(m_codecContextMutex);
     CleanupContext();
@@ -122,7 +123,14 @@ void VideoDecoder::Decode(std::shared_ptr<IAVPacket> packet) {
 }
 
 void VideoDecoder::Start() {
+    if (m_thread && m_thread->joinable()) {
+        m_paused = false;
+        m_notifier.Notify();
+        return;
+    }
+    m_abort = false;
     m_paused = false;
+    m_thread = std::make_shared<std::thread>(&VideoDecoder::ThreadLoop, this);
     m_notifier.Notify();
 }
 
@@ -131,7 +139,8 @@ void VideoDecoder::Pause() { m_paused = true; }
 void VideoDecoder::Stop() {
     m_abort = true;
     m_notifier.Notify();
-    if (m_thread.joinable()) m_thread.join();
+    if (m_thread && m_thread->joinable()) m_thread->join();
+    m_thread.reset();
 }
 
 int VideoDecoder::GetVideoWidth() {
@@ -165,7 +174,7 @@ void VideoDecoder::CheckFlushPacket() {
     auto packet = m_packetQueue.front();
     if (packet->flags & AVFrameFlag::kFlush) {
         m_packetQueue.pop_front();
-        avcodec_flush_buffers(m_codecContext);
+        if (m_codecContext) avcodec_flush_buffers(m_codecContext);
 
         auto videoFrame = std::make_shared<IVideoFrame>();
         videoFrame->flags |= AVFrameFlag::kFlush;

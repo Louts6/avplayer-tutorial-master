@@ -11,12 +11,6 @@ IAudioSpeaker* IAudioSpeaker::Create(unsigned int channels, unsigned int sampleR
     return new AndroidAudioSpeaker(channels, sampleRate);
 }
 }  // namespace av
-#elif defined(_WIN32)
-namespace av {
-IAudioSpeaker* IAudioSpeaker::Create(unsigned int channels, unsigned int sampleRate) {
-    return nullptr;
-}
-}  // namespace av
 #else
 #include "Engine/AudioSpeaker.h"
 namespace av {

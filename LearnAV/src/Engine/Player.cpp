@@ -94,10 +94,13 @@ void Player::SetPlaybackListener(std::shared_ptr<IPlaybackListener> listener) {
 bool Player::Open(std::string& filePath) {
     if (!m_fileReader) return false;
     m_fileReader->SetUseGpu(m_useGpu);
+    m_eofNotified = false;
     return m_fileReader->Open(filePath);
 }
 
 void Player::Play() {
+    if (m_videoPipeline) m_videoPipeline->Start();  // 重启渲染线程（支持连续播放）
+    if (m_audioSpeaker) m_audioSpeaker->Start();     // 重启音频输出设备（支持连续播放）
     if (m_fileReader) m_fileReader->Start();
     m_isPlaying = true;
 
@@ -112,6 +115,14 @@ void Player::Pause() {
 
     std::lock_guard<std::recursive_mutex> lock(m_playbackListenerMutex);
     if (m_playbackListener) m_playbackListener->NotifyPlaybackPaused();
+}
+
+void Player::Stop() {
+    if (m_fileReader) m_fileReader->Stop();
+    if (m_avSynchronizer) m_avSynchronizer->Reset();
+    if (m_videoPipeline) m_videoPipeline->Stop();
+    if (m_audioSpeaker) m_audioSpeaker->Stop();
+    m_isPlaying = false;
 }
 
 void Player::SeekTo(float progress) {
@@ -209,10 +220,7 @@ void Player::OnAudioPipelineNotifyAudioSamples(std::shared_ptr<IAudioSamples> au
 }
 
 void Player::OnAudioPipelineNotifyFinished() {
-    {
-        std::lock_guard<std::recursive_mutex> lock(m_playbackListenerMutex);
-        if (m_playbackListener) m_playbackListener->NotifyPlaybackEOF();
-    }
+    NotifyEofOnce();
 
     std::lock_guard<std::mutex> lock(m_fileWriterMutex);
     if (m_fileWriter) m_fileWriter->NotifyAudioFinished();
@@ -233,8 +241,17 @@ void Player::OnVideoPipelineNotifyVideoFrame(std::shared_ptr<IVideoFrame> videoF
 }
 
 void Player::OnVideoPipelineNotifyFinished() {
+    NotifyEofOnce();
+
     std::lock_guard<std::mutex> lock(m_fileWriterMutex);
     if (m_fileWriter) m_fileWriter->NotifyVideoFinished();
+}
+
+void Player::NotifyEofOnce() {
+    bool expected = false;
+    if (!m_eofNotified.compare_exchange_strong(expected, true)) return;
+    std::lock_guard<std::recursive_mutex> lock(m_playbackListenerMutex);
+    if (m_playbackListener) m_playbackListener->NotifyPlaybackEOF();
 }
 
 }  // namespace av

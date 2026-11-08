@@ -11,8 +11,7 @@
 #include <QStandardPaths>
 
 #include "IPlayer.h"
-
-#define DEBUG_PATH
+#include "Media/MediaController.h"
 
 ControllerWidget::ControllerWidget(QWidget* parent, std::shared_ptr<av::IPlayer> player)
     : QWidget(parent), m_player(player) {
@@ -66,11 +65,6 @@ ControllerWidget::ControllerWidget(QWidget* parent, std::shared_ptr<av::IPlayer>
     layout->addWidget(m_buttonVideoFilterSticker);
     layout->addWidget(m_checkBoxGpu);
     setLayout(layout);
-
-#ifdef DEBUG_PATH
-    std::string videoFilePathStd = std::string(RESOURCE_DIR) + "/video/video0.mp4";
-    m_player->Open(videoFilePathStd);
-#endif
 }
 
 void ControllerWidget::onImportButtonClicked() {
@@ -87,6 +81,18 @@ void ControllerWidget::onImportButtonClicked() {
 }
 
 void ControllerWidget::onPlayButtonClicked() {
+    // 优先走媒体调度器（可统一处理视频 / 图片 / PDF 的暂停/继续）
+    if (m_controller) {
+        if (m_controller->isPlaying()) {
+            m_controller->pause();
+            m_buttonPlay->setText("播放");
+        } else {
+            m_controller->resume();
+            m_buttonPlay->setText("暂停");
+        }
+        return;
+    }
+
     if (!m_player) return;
 
     if (m_player->IsPlaying()) {

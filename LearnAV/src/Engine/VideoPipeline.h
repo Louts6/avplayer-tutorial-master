@@ -30,6 +30,7 @@ public:
     void SetListener(Listener* listener) override;
     void NotifyVideoFrame(std::shared_ptr<IVideoFrame> videoFrame) override;
     void NotifyVideoFinished() override;
+    void Start() override;
     void Stop() override;
 
 private:

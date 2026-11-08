@@ -36,6 +36,7 @@ public:
     bool Open(std::string& filePath) override;
     void Play() override;
     void Pause() override;
+    void Stop() override;
     void SeekTo(float progress) override;
     bool IsPlaying() override;
 
@@ -52,6 +53,7 @@ public:
 private:
     void InitTaskPoolGLContext();
     void DestroyTaskPoolGLContext();
+    void NotifyEofOnce();
 
     // 继承自IFileReader::Listener
     void OnFileReaderNotifyAudioSamples(std::shared_ptr<IAudioSamples>) override;
@@ -107,6 +109,7 @@ private:
     std::atomic<bool> m_isPlaying{false};
     std::atomic<bool> m_isRecording{false};
     std::atomic<bool> m_useGpu{false};  // 是否使用 GPU 编解码（默认 false）
+    std::atomic<bool> m_eofNotified{false};  ///< 防止音频/视频两路重复上报 EOF
 };
 
 }  // namespace av

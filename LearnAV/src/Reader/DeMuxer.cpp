@@ -16,13 +16,11 @@ DeMuxer::DeMuxer() {
     m_audioStream.pipelineReleaseCallback =
         std::make_shared<std::function<void()>>([&]() { ReleaseAudioPipelineResource(); });
 
-    m_thread = std::thread(&DeMuxer::ThreadLoop, this);
+    Start();
 }
 
 DeMuxer::~DeMuxer() {
     Stop();
-    if (m_thread.joinable()) m_thread.join();
-
     std::lock_guard<std::mutex> lock(m_formatMutex);
     if (m_formatCtx) avformat_close_input(&m_formatCtx);
 }
@@ -34,10 +32,21 @@ void DeMuxer::SetListener(IDeMuxer::Listener* listener) {
 
 bool DeMuxer::Open(const std::string& url) {
     std::lock_guard<std::mutex> lock(m_formatMutex);
+    // 关闭上一个文件，支持连续播放
+    if (m_formatCtx) {
+        avformat_close_input(&m_formatCtx);
+        m_formatCtx = nullptr;
+    }
+    m_audioStream.streamIndex = -1;
+    m_videoStream.streamIndex = -1;
+    m_audioStream.pipelineResourceCount = 3;
+    m_videoStream.pipelineResourceCount = 3;
     if (avformat_open_input(&m_formatCtx, url.c_str(), nullptr, nullptr) != 0) {
         return false;
     }
     if (avformat_find_stream_info(m_formatCtx, nullptr) < 0) {
+        avformat_close_input(&m_formatCtx);
+        m_formatCtx = nullptr;
         return false;
     }
     for (unsigned int i = 0; i < m_formatCtx->nb_streams; ++i) {
@@ -56,7 +65,15 @@ bool DeMuxer::Open(const std::string& url) {
 }
 
 void DeMuxer::Start() {
+    if (m_thread && m_thread->joinable()) {
+        // 线程仍在运行，仅取消暂停
+        m_paused = false;
+        m_notifier.Notify();
+        return;
+    }
+    m_abort = false;
     m_paused = false;
+    m_thread = std::make_shared<std::thread>(&DeMuxer::ThreadLoop, this);
     m_notifier.Notify();
 }
 
@@ -71,6 +88,8 @@ void DeMuxer::SeekTo(float progress) {
 void DeMuxer::Stop() {
     m_abort = true;
     m_notifier.Notify();
+    if (m_thread && m_thread->joinable()) m_thread->join();
+    m_thread.reset();
 }
 
 float DeMuxer::GetDuration() {
@@ -142,6 +161,19 @@ bool DeMuxer::ReadAndSendPacket() {
         av_packet_unref(&packet);
     } else if (ret == AVERROR_EOF) {
         m_paused = true;
+        // 通知监听器 EOF，并向解码器发送 flush 包清空残留状态
+        {
+            std::lock_guard<std::recursive_mutex> listenerLock(m_listenerMutex);
+            if (m_listener) m_listener->OnDeMuxEOF();
+
+            auto audioFlush = std::make_shared<IAVPacket>(nullptr);
+            audioFlush->flags |= AVFrameFlag::kFlush;
+            if (m_listener) m_listener->OnNotifyAudioPacket(audioFlush);
+
+            auto videoFlush = std::make_shared<IAVPacket>(nullptr);
+            videoFlush->flags |= AVFrameFlag::kFlush;
+            if (m_listener) m_listener->OnNotifyVideoPacket(videoFlush);
+        }
     } else {
         return false;
     }

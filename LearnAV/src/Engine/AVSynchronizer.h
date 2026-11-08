@@ -65,6 +65,8 @@ private:
     StreamInfo m_audioStreamInfo;
     StreamInfo m_videoStreamInfo;
 
+    bool m_audioActive{false};  // 是否已收到音频帧（用于无音频流时跳过音视频同步）
+
     Listener* m_listener{nullptr};
     std::mutex m_listenerMutex;
 

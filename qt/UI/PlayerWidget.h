@@ -21,6 +21,8 @@ public:
     explicit PlayerWidget(QWidget *parent, std::shared_ptr<av::IPlayer> player);
     ~PlayerWidget() override;
 
+    av::OpenGLView *openGLView() const { return m_openGLView; }
+
 private:
     av::OpenGLView *m_openGLView{nullptr};
     std::shared_ptr<av::IPlayer> m_player;

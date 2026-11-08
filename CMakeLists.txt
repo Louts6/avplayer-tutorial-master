@@ -111,12 +111,12 @@ else()
         set(GLM_INCLUDE_DIR "${PROJECT_ROOT_DIR}/3rdparty/glm")
         set(GLAD_INCLUDE_DIR "${PROJECT_ROOT_DIR}/3rdparty/glad/include")
         set(GLAD_SRC "${PROJECT_ROOT_DIR}/3rdparty/glad/src/glad.c")
-        find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Quick)
+        find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Quick Pdf)
     else()
         find_package(ffmpeg REQUIRED)
         find_package(stb REQUIRED)
         find_package(glm REQUIRED)
-        find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Multimedia Quick)
+        find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Multimedia Network Pdf)
     endif()
 
     set(INSPIREFACE_BASE_DIR "${PROJECT_ROOT_DIR}/3rdparty/InspireFace")
@@ -159,15 +159,15 @@ else()
     list(FILTER LIBRARY_SOURCE_FILES EXCLUDE REGEX ".*/Android/.*\\.cpp$")
     if(WIN32)
         list(FILTER LIBRARY_SOURCE_FILES EXCLUDE REGEX ".*StickerFilter\\.cpp$")
-        list(FILTER LIBRARY_SOURCE_FILES EXCLUDE REGEX ".*/Engine/AudioSpeaker\\.cpp$")
     endif()
 
     add_library(${PROJECT_NAME} STATIC ${LIBRARY_SOURCE_FILES} $<${WIN32}:${GLAD_SRC}>)
     if(WIN32)
         target_include_directories(${PROJECT_NAME} PUBLIC ${INCLUDE_DIRS})
-        target_link_directories(${PROJECT_NAME} PUBLIC ${FFMPEG_LIB_DIR})
+        target_link_directories(${PROJECT_NAME} PUBLIC ${FFMPEG_LIB_DIR} "D:/Qt/6.7.2/msvc2019_64/lib")
         target_link_libraries(${PROJECT_NAME} PUBLIC
-            Qt6::Core Qt6::Gui Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Widgets
+            Qt6::Core Qt6::Gui Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Widgets Qt6::Pdf
+            Qt6Multimedia
         )
         target_link_libraries(${PROJECT_NAME} PRIVATE
             avcodec avformat avutil swscale swresample avfilter avdevice
@@ -185,10 +185,10 @@ else()
     add_executable(QtDemo ${DEMO_SOURCE_FILES})
     target_include_directories(QtDemo PRIVATE ${PROJECT_ROOT_DIR}/qt ${PROJECT_ROOT_DIR}/LearnAV/qt)
     if(WIN32)
-        target_link_directories(QtDemo PRIVATE ${FFMPEG_LIB_DIR})
+        target_link_directories(QtDemo PRIVATE ${FFMPEG_LIB_DIR} "D:/Qt/6.7.2/msvc2019_64/lib")
         target_link_libraries(QtDemo PRIVATE
             Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets
-            Qt6::Quick ${PROJECT_NAME}
+            Qt6::Pdf Qt6Multimedia ${PROJECT_NAME}
             avcodec avformat avutil swscale swresample avfilter avdevice
         )
         # Copy FFmpeg DLLs to output directory

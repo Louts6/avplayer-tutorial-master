@@ -12,6 +12,7 @@
 
 namespace av {
 struct IPlayer;
+class MediaController;
 }  // namespace av
 
 class ControllerWidget : public QWidget {
@@ -19,6 +20,8 @@ class ControllerWidget : public QWidget {
 public:
     explicit ControllerWidget(QWidget* parent, std::shared_ptr<av::IPlayer> player);
     ~ControllerWidget() override = default;
+
+    void setMediaController(av::MediaController* controller) { m_controller = controller; }
 
 private slots:
     void onImportButtonClicked();
@@ -41,6 +44,7 @@ private:
     QCheckBox* m_checkBoxGpu{nullptr};
 
     std::shared_ptr<av::IPlayer> m_player;
+    av::MediaController*         m_controller{nullptr};
 };
 
 #endif  // LEARNAV_CONTROLLERWIDGET_H
